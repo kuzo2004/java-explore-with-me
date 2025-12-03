@@ -1,14 +1,63 @@
 services:
+
+  # ---------------- STATISTICS SERVER ----------------
   stats-server:
+    build: stats/stats-server      # путь к Dockerfile stats-server
+    container_name: stats-server
     ports:
       - "9090:9090"
+    depends_on:
+      - stats-db                     # ждать, пока поднимется база
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://stats-db:5432/stats
+      SPRING_DATASOURCE_USERNAME: stat
+      SPRING_DATASOURCE_PASSWORD: stat
+#    restart: always                  # авто-перезапуск при ошибках
 
+  # ---------------- STATISTICS DATABASE ----------------
   stats-db:
     image: postgres:16.1
+    container_name: stats-db
+    ports:
+      - "6542:5432"                  # порт PostgreSQL
+    environment:
+      POSTGRES_DB: stats             # имя БД
+      POSTGRES_USER: stat
+      POSTGRES_PASSWORD: stat
+    volumes:
+      - stats-data:/var/lib/postgresql/data  # сохраняем данные
+#    restart: always
 
+  # ---------------- MAIN SERVICE ----------------
   ewm-service:
+    build: main-service            # путь к Dockerfile main-service
+    container_name: ewm-service
     ports:
       - "8080:8080"
+    depends_on:
+      - ewm-db
+    environment:
+      CLIENT_URL: http://stats-server:9090
+      SPRING_DATASOURCE_URL: jdbc:postgresql://ewm-db:5432/ewm
+      SPRING_DATASOURCE_USERNAME: main
+      SPRING_DATASOURCE_PASSWORD: main
+#    restart: always
 
+  # ---------------- MAIN SERVICE DATABASE ----------------
   ewm-db:
     image: postgres:16.1
+    container_name: ewm-db
+    ports:
+      - "5433:5432"                  # чтобы не конфликтовать со stats-db
+    environment:
+      POSTGRES_DB: ewm
+      POSTGRES_USER: main
+      POSTGRES_PASSWORD: main
+    volumes:
+      - ewm-data:/var/lib/postgresql/data
+    restart: always
+
+## ---------------- VOLUMES ----------------
+volumes:
+  stats-data:
+  ewm-data:
