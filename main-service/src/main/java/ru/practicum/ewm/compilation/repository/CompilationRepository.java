@@ -2,7 +2,6 @@ package ru.practicum.ewm.compilation.repository;
 
 import com.querydsl.jpa.impl.JPAQuery;
 import jakarta.persistence.EntityManager;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.querydsl.QuerydslPredicateExecutor;
 import org.springframework.stereotype.Repository;
@@ -41,7 +40,8 @@ public interface CompilationRepository extends JpaRepository<Compilation, Long>,
     // ============================================================
     public default List<Compilation> findCompilationsWithEvents(
             Boolean pinned,
-            Pageable pageable,
+            int from,
+            int size,
             EntityManager em
     ) {
         // ----------------------------
@@ -52,8 +52,8 @@ public interface CompilationRepository extends JpaRepository<Compilation, Long>,
                 .from(c)
                 .where(pinned != null ? c.pinned.eq(pinned) : null)
                 .orderBy(c.id.asc()) // стабильная сортировка для пагинации
-                .offset(pageable.getOffset())
-                .limit(pageable.getPageSize())
+                .offset(from)
+                .limit(size)
                 .fetch();
 
         if (ids.isEmpty()) {

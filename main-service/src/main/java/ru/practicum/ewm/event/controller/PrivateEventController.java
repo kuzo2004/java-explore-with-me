@@ -2,9 +2,6 @@ package ru.practicum.ewm.event.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -86,12 +83,6 @@ public class PrivateEventController {
             @RequestParam(defaultValue = "0") int from,
             @RequestParam(defaultValue = "10") int size) {
 
-        Pageable pageable = PageRequest.of(
-                from / size,
-                size,
-                Sort.by(Sort.Direction.ASC, "id")
-        );
-
-        return ResponseEntity.ok(eventService.getUserEvents(userId, pageable));
+        return ResponseEntity.ok(eventService.getUserEvents(userId, from, size));
     }
 }

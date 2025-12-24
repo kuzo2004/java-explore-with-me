@@ -2,7 +2,6 @@ package ru.practicum.ewm.event.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,7 +19,6 @@ import ru.practicum.ewm.event.service.EventService;
 import java.time.LocalDateTime;
 import java.util.List;
 
-@Slf4j
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/admin/events")
@@ -51,10 +49,6 @@ public class AdminEventController {
                                                               .build();
 
         List<EventFullDto> events = eventService.searchEvents(params, from, size);
-
-        // ---- Логирование ----
-        log.info("searchEvents called with params: {}", params);
-        log.info("Returning {} events: {}", events.size(), events);
 
         return ResponseEntity.ok(events);
     }

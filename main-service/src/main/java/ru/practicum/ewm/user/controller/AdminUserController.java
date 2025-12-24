@@ -2,9 +2,6 @@ package ru.practicum.ewm.user.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -42,13 +39,7 @@ public class AdminUserController {
             @RequestParam(defaultValue = "0") int from,
             @RequestParam(defaultValue = "10") int size) {
 
-        Pageable pageable = PageRequest.of(
-                from / size,
-                size,
-                Sort.by(Sort.Direction.ASC, "id")
-        );
-
-        List<UserDto> users = userService.getUsers(ids, pageable);
+        List<UserDto> users = userService.getUsers(ids, from, size);
         return ResponseEntity.ok(users);
     }
 

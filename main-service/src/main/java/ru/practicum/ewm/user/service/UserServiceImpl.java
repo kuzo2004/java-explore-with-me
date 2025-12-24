@@ -1,8 +1,8 @@
 package ru.practicum.ewm.user.service;
 
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.practicum.ewm.exceptions.ConflictException;
@@ -23,6 +23,7 @@ public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
     private final UserMapper userMapper;
+    private final EntityManager entityManager;
 
     @Override
     @Transactional
@@ -44,14 +45,14 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public List<UserDto> getUsers(List<Long> ids, Pageable pageable) {
+    public List<UserDto> getUsers(List<Long> ids, int from, int size) {
 
         List<User> users;
 
         if (ids != null && !ids.isEmpty()) {
-            users = userRepository.findAllByIdIn(ids, pageable).getContent();
+            users = userRepository.findAllByIdIn(ids, from, size, entityManager);
         } else {
-            users = userRepository.findAll(pageable).getContent();
+            users = userRepository.findAll(from, size, entityManager);
         }
 
         return users.stream()

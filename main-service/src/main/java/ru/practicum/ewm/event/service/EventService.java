@@ -1,6 +1,5 @@
 package ru.practicum.ewm.event.service;
 
-import org.springframework.data.domain.Pageable;
 import ru.practicum.ewm.event.dto.EventFullDto;
 import ru.practicum.ewm.event.dto.EventShortDto;
 import ru.practicum.ewm.event.dto.NewEventDto;
@@ -19,7 +18,7 @@ public interface EventService {
 
     EventFullDto getUserEvent(Long userId, Long eventId);
 
-    List<EventShortDto> getUserEvents(Long userId, Pageable pageable);
+    List<EventShortDto> getUserEvents(Long userId, int from, int size);
 
     List<EventFullDto> searchEvents(EventAdminSearchParams params, int from, int size);
 

@@ -4,8 +4,6 @@ import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.jpa.impl.JPAQuery;
 import jakarta.persistence.EntityManager;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.querydsl.QuerydslPredicateExecutor;
 import org.springframework.stereotype.Repository;
@@ -40,9 +38,23 @@ public interface EventRepository extends JpaRepository<Event, Long>,
 
     Optional<Event> findByIdAndInitiatorId(Long eventId, Long userId);
 
-    Page<Event> findAllByInitiatorId(Long userId, Pageable pageable);
-
     boolean existsByCategoryId(Long categoryId);
+
+
+    // для GET /users/{userId}/events
+    default List<Event> findAllByInitiatorId(Long userId, int from, int size, EntityManager em) {
+
+        QEvent event = QEvent.event;
+
+        return new JPAQuery<Event>(em)
+                .select(event)
+                .from(event)
+                .where(event.initiator.id.eq(userId))
+                .orderBy(event.id.asc())
+                .offset(from)
+                .limit(size)
+                .fetch();
+    }
 
 
     // для GET/admin/events

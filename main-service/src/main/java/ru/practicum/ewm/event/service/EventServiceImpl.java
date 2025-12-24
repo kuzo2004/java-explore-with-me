@@ -2,12 +2,12 @@ package ru.practicum.ewm.event.service;
 
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.practicum.ewm.category.model.Category;
 import ru.practicum.ewm.category.repository.CategoryRepository;
 import ru.practicum.ewm.client.StatsClient;
+import ru.practicum.ewm.dto.ViewStats;
 import ru.practicum.ewm.event.dto.EventFullDto;
 import ru.practicum.ewm.event.dto.EventShortDto;
 import ru.practicum.ewm.event.dto.NewEventDto;
@@ -46,7 +46,7 @@ import java.util.stream.Collectors;
  * - views получаются из Stats-сервиса
  * - confirmedRequests вычисляются через ParticipationRequest
  * <p>
- * Эти значения агрегируются на уровне сервиса
+ * Эти значения агрегируют на уровне сервиса
  * и добавляются только в DTO.
  */
 @Service
@@ -73,7 +73,6 @@ public class EventServiceImpl implements EventService {
     @Transactional
     public EventFullDto createEvent(Long userId, NewEventDto dto) {
 
-        // 1. Проверки
         User user = userRepository.findById(userId)
                                   .orElseThrow(() ->
                                           new NotFoundException("User with id=" + userId + " was not found"));
@@ -93,7 +92,7 @@ public class EventServiceImpl implements EventService {
         }
 
 
-        // 2. Создаем сущность и заполняем поля
+        // Создаем сущность и заполняем поля
         Event event = eventMapper.toEvent(dto);
         event.setCategory(category);
         event.setInitiator(user);
@@ -105,12 +104,8 @@ public class EventServiceImpl implements EventService {
         if (event.getParticipantLimit() == null) event.setParticipantLimit(0);
         if (event.getRequestModeration() == null) event.setRequestModeration(true);
 
-        // 3. Сохраняем событие
         Event saved = eventRepository.save(event);
 
-        // 4. Маппим и обогащаем DTO
-        // views и confirmedRequests не хранятся в БД,
-        // для нового события они всегда равны 0
         EventFullDto eventFullDto = eventMapper.toEventFullDto(saved);
         eventFullDto.setViews(0L);
         eventFullDto.setConfirmedRequests(0L);
@@ -119,7 +114,7 @@ public class EventServiceImpl implements EventService {
     }
 
     // ============================================================
-    // Редактирование события пользователем
+    // Редактирование своего события пользователем
     // ============================================================
     @Override
     @Transactional
@@ -129,12 +124,10 @@ public class EventServiceImpl implements EventService {
         Long eventId = params.getEventId();
         UpdateEventUserRequest dto = params.getDto();
 
-        // 1. Найти событие пользователя
         Event event = eventRepository.findByIdAndInitiatorId(eventId, userId)
                                      .orElseThrow(() -> new NotFoundException(
                                              "Event with id=" + eventId + " for user id=" + userId + " not found"));
 
-        // 2. Проверка состояния события
         if (event.getState() == EventState.PUBLISHED) {
             throw new ConflictException("Cannot edit a published event");
         }
@@ -142,19 +135,16 @@ public class EventServiceImpl implements EventService {
             throw new ConflictException("Event can only be edited in PENDING or CANCELED state");
         }
 
-        // 3. Проверка даты
         if (dto.getEventDate() != null && dto.getEventDate().isBefore(LocalDateTime.now().plusHours(2))) {
-            throw new BadRequestException("Event date must be at least 2 hours in the future");
+            throw new BadRequestException("Event date must be at least 2 hours in the future"); // в postman код 400
         }
 
         if (dto.getParticipantLimit() != null && dto.getParticipantLimit() < 0) {
-            throw new IllegalArgumentException("Participant limit cannot be negative");
+            throw new BadRequestException("Participant limit cannot be negative"); // в postman код 400
         }
 
-        // 4. Обновление полей через MapStruct
         eventMapper.updateEventFromUserRequest(dto, event);
 
-        // 5. Обработка category вручную
         if (dto.getCategory() != null) {
             Category category = categoryRepository.findById(dto.getCategory())
                                                   .orElseThrow(() -> new NotFoundException(
@@ -162,7 +152,6 @@ public class EventServiceImpl implements EventService {
             event.setCategory(category);
         }
 
-        // 6. Обработка stateAction
         if (dto.getStateAction() != null) {
 
             switch (dto.getStateAction()) {
@@ -186,12 +175,9 @@ public class EventServiceImpl implements EventService {
             }
         }
 
-        // 7. Сохраняем изменения
         Event saved = eventRepository.save(event);
 
-        // 8. Обогащение DTO
-        // views и confirmedRequests вычисляются агрегатно,
-        // не являются полями Event
+        // Обогащение DTO
         LocalDateTime start = DEFAULT_START;
         LocalDateTime end = LocalDateTime.now();
 
@@ -233,23 +219,21 @@ public class EventServiceImpl implements EventService {
     // Получение списка событий пользователя (короткая DTO)
     // ============================================================
     @Override
-    public List<EventShortDto> getUserEvents(Long userId, Pageable pageable) {
+    public List<EventShortDto> getUserEvents(Long userId, int from, int size) {
 
-        List<Event> events = eventRepository.findAllByInitiatorId(userId, pageable).getContent();
+        List<Event> events = eventRepository.findAllByInitiatorId(userId, from, size, entityManager);
 
         if (events.isEmpty()) {
             return List.of();
         }
 
-        // Диапазон для stats
+        // агрегация данных по связанным событиям (просмотры, подтвержденные заявки)
         LocalDateTime start = DEFAULT_START;
         LocalDateTime end = LocalDateTime.now();
 
-        // Просмотры и подтверждённые заявки (batch)
         Map<Long, Long> viewsMap = getViews(events, start, end);
         Map<Long, Long> confirmedMap = getConfirmedRequests(events);
 
-        // Преобразование + обогащение DTO
         return events.stream()
                      .map(event -> {
                          EventShortDto dto = eventMapper.toEventShortDto(event);
@@ -274,7 +258,7 @@ public class EventServiceImpl implements EventService {
             return List.of();
         }
 
-        // задаём диапазон дат для StatsClient
+        // даты для StatsClient
         LocalDateTime start = params.getRangeStart() != null
                 ? params.getRangeStart()
                 : DEFAULT_START;
@@ -282,11 +266,10 @@ public class EventServiceImpl implements EventService {
                 ? params.getRangeEnd()
                 : LocalDateTime.now();
 
-        // Просмотры и подтверждённые заявки (batch)
+        // Просмотры и подтверждённые заявки
         Map<Long, Long> viewsMap = getViews(events, start, end);
         Map<Long, Long> confirmedMap = getConfirmedRequests(events);
 
-        // Преобразуем в DTO и добавляем просмотры
         return events.stream()
                      .map(e -> {
                          EventFullDto dto = eventMapper.toEventFullDto(e);
@@ -309,7 +292,7 @@ public class EventServiceImpl implements EventService {
             throw new BadRequestException("rangeStart must be before rangeEnd");
         }
 
-        // 1. Получаем события с fetch join и фильтрами
+        // Получаем события с fetch join и фильтрами
         List<Event> events =
                 eventRepository.searchPublicEvents(params, entityManager);
 
@@ -317,7 +300,7 @@ public class EventServiceImpl implements EventService {
             return List.of();
         }
 
-        // 2.Диапазон дат для StatsClient
+        // даты для StatsClient
         LocalDateTime start = params.getRangeStart() != null
                 ? params.getRangeStart()
                 : DEFAULT_START;
@@ -326,7 +309,7 @@ public class EventServiceImpl implements EventService {
                 : LocalDateTime.now();
 
 
-        // 3. Batch-агрегация
+        // Batch-агрегация просмотров и заявок
         Map<Long, Long> viewsMap = getViews(events, start, end);
         Map<Long, Long> confirmedMap = getConfirmedRequests(events);
 
@@ -369,7 +352,6 @@ public class EventServiceImpl implements EventService {
         List<Event> page = events.subList(fromIndex, toIndex);
 
 
-        //  7. Преобразование + обогащение DTO
         return page.stream()
                    .map(e -> {
                        EventShortDto dto = eventMapper.toEventShortDto(e);
@@ -386,20 +368,18 @@ public class EventServiceImpl implements EventService {
     // ============================================================
     @Override
     public EventFullDto getPublicEventById(Long eventId) {
-        // 1. Получаем событие через репозиторий с fetch join
         Event event = eventRepository.findPublicEventById(eventId, entityManager);
 
-        // 2. Подготавливаем диапазон для StatsClient
+        // диапазон для StatsClient
         LocalDateTime start = DEFAULT_START;           //  с начала эпохи
         LocalDateTime end = LocalDateTime.now();       // до текущего времени
 
-        // 3. Получаем просмотры
+        // просмотры
         Map<Long, Long> viewsMap = getViews(List.of(event), start, end);
 
-        // 4. Получаем confirmedRequests (для одного события)
+        // заявки(подтвержденные)
         long confirmedRequests = requestService.getConfirmedRequestsCount(event.getId());
 
-        // 5. Преобразуем в DTO и обогащаем
         EventFullDto dto = eventMapper.toEventFullDto(event);
         dto.setViews(viewsMap.getOrDefault(event.getId(), 0L));
         dto.setConfirmedRequests(confirmedRequests);
@@ -415,12 +395,11 @@ public class EventServiceImpl implements EventService {
     @Transactional
     public EventFullDto updateEventByAdmin(Long eventId, UpdateEventAdminRequest dto) {
 
-        // 1. Получаем событие по id (админ может редактировать любое)
         Event event = eventRepository.findById(eventId)
                                      .orElseThrow(() -> new NotFoundException(
                                              "Event with id=" + eventId + " not found"));
 
-        // 2. Проверка изменения даты события
+        // Проверка изменения даты события
         if (dto.getEventDate() != null) {
             LocalDateTime newDate = dto.getEventDate();
 
@@ -428,14 +407,14 @@ public class EventServiceImpl implements EventService {
                 // событие уже опубликовано — проверка +1 час
                 LocalDateTime earliestAllowedDate = event.getPublishedOn().plusHours(1);
                 if (newDate.isBefore(earliestAllowedDate)) {
-                    throw new BadRequestException(
+                    throw new ConflictException(
                             "Event date must be at least 1 hour after publication");
                 }
             } else {
                 // событие ещё не опубликовано — проверка, что дата не в прошлом
                 if (newDate.isBefore(LocalDateTime.now().plusHours(1))) {
                     throw new BadRequestException(
-                            "Event date must be at least 1 hour from now");
+                            "Event date must be at least 1 hour from now"); // postman требует код 400
                 }
             }
         }
@@ -444,7 +423,6 @@ public class EventServiceImpl implements EventService {
             throw new IllegalArgumentException("Participant limit cannot be negative");
         }
 
-        // 3. Обработка stateAction
         if (dto.getStateAction() != null) {
 
             switch (dto.getStateAction()) {
@@ -472,7 +450,6 @@ public class EventServiceImpl implements EventService {
             }
         }
 
-        // 4. Обработка Category
         if (dto.getCategory() != null) {
             Category category = categoryRepository.findById(dto.getCategory())
                                                   .orElseThrow(() -> new NotFoundException(
@@ -480,13 +457,10 @@ public class EventServiceImpl implements EventService {
             event.setCategory(category);
         }
 
-        // 5. Обновление простых полей через MapStruct
         eventMapper.updateEventFromAdminRequest(dto, event);
 
-        // 6. Сохранение
         Event saved = eventRepository.save(event);
 
-        // 7. Обогащение DTO
         LocalDateTime start = DEFAULT_START;
         LocalDateTime end = LocalDateTime.now();
 
@@ -521,7 +495,7 @@ public class EventServiceImpl implements EventService {
                           .stream()
                           .collect(Collectors.toMap(
                                   s -> Long.parseLong(s.getUri().split("/")[2]),
-                                  s -> s.getHits(),
+                                  ViewStats::getHits,
                                   (existing, replacement) -> existing
                           ));
     }

@@ -2,7 +2,6 @@ package ru.practicum.ewm.compilation.service;
 
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.practicum.ewm.client.StatsClient;
@@ -56,8 +55,6 @@ public class CompilationServiceImpl implements CompilationService {
             compilation.setPinned(false);
         }
 
-        // находим события по ids (если не передали — пустой список)
-        // получаем события с category и initiator, чтобы избежать N+1 при маппинге в EventShortDto
         List<Event> events = newCompilationDto.getEvents() == null
                 ? Collections.emptyList()
                 : eventRepository
@@ -67,9 +64,9 @@ public class CompilationServiceImpl implements CompilationService {
 
         Compilation saved = compilationRepository.save(compilation);
 
-        // DTO с обогащением событий статистикой
+
         CompilationDto result = compilationMapper.toCompilationDto(saved);
-        result.setEvents(enrichEventsWithStats(saved.getEvents()));  // внутри  batch-запросы
+        result.setEvents(enrichEventsWithStats(saved.getEvents()));
 
         return result;
     }
@@ -100,17 +97,14 @@ public class CompilationServiceImpl implements CompilationService {
                                                                new NotFoundException(
                                                                        "Compilation with id=" + id + " was not found"));
 
-        // обновляем title
         if (dto.getTitle() != null) {
             compilation.setTitle(dto.getTitle());
         }
 
-        // обновляем pinned
         if (dto.getPinned() != null) {
             compilation.setPinned(dto.getPinned());
         }
 
-        //  обновляем события — полная замена списка
         if (dto.getEvents() != null) {
 
             // гарантируем, что коллекция инициализирована
@@ -130,7 +124,6 @@ public class CompilationServiceImpl implements CompilationService {
         Compilation saved = compilationRepository.save(compilation);
 
 
-        // DTO с обогащением событий статистикой
         CompilationDto result = compilationMapper.toCompilationDto(saved);
         result.setEvents(enrichEventsWithStats(saved.getEvents()));
 
@@ -141,36 +134,36 @@ public class CompilationServiceImpl implements CompilationService {
     // Получение списка компиляций (с фильтром pinned и пагинацией)
     // --------------------------------------------------------------
     @Override
-    public List<CompilationDto> getCompilations(Boolean pinned, Pageable pageable) {
+    public List<CompilationDto> getCompilations(Boolean pinned, int from, int size) {
 
-        // 1. Загружаем компиляции с событиями + category + initiator через fetch join
+        // Загружаем компиляции с событиями + category + initiator через fetch join
         List<Compilation> compilations =
-                compilationRepository.findCompilationsWithEvents(pinned, pageable, entityManager);
+                compilationRepository.findCompilationsWithEvents(pinned, from, size, entityManager);
 
-        // 2. Собираем все события на странице
+        // Собираем все события на странице
         List<Event> allEvents = compilations.stream()
                                             .flatMap(comp -> comp.getEvents().stream())
                                             .toList();
 
-        // 3. Получаем статистику одним batch-запросом
+        // статистика по событиям
         Map<Long, Long> viewsMap = getViews(allEvents);
         Map<Long, Long> confirmedMap = getConfirmedRequests(allEvents);
 
-        // 4. Преобразуем компиляции в DTO с обогащёнными событиями
+        // compilation ->  DTO с обогащёнными событиями
         return compilations.stream()
-                       .map(comp -> {
+                           .map(comp -> {
                                CompilationDto dto = compilationMapper.toCompilationDto(comp);
                                List<EventShortDto> enrichedEvents = comp.getEvents().stream()
-                                    .map(event -> {
-                                            EventShortDto eventDto = eventMapper.toEventShortDto(event);
-                                            eventDto.setViews(viewsMap.getOrDefault(event.getId(), 0L));
-                                            eventDto.setConfirmedRequests(confirmedMap.getOrDefault(event.getId(), 0L));
-                                            return eventDto;
-                                    })
-                                .toList();
+                                                                        .map(event -> {
+                                                                            EventShortDto eventDto = eventMapper.toEventShortDto(event);
+                                                                            eventDto.setViews(viewsMap.getOrDefault(event.getId(), 0L));
+                                                                            eventDto.setConfirmedRequests(confirmedMap.getOrDefault(event.getId(), 0L));
+                                                                            return eventDto;
+                                                                        })
+                                                                        .toList();
                                dto.setEvents(enrichedEvents);
                                return dto;
-                       })
+                           })
                            .toList();
     }
 
@@ -183,7 +176,7 @@ public class CompilationServiceImpl implements CompilationService {
         Compilation compilation = compilationRepository.findByIdWithEvents(compId, entityManager)
                                                        .orElseThrow(() ->
                                                                new NotFoundException(
-                                                               "Compilation with id=" + compId + " was not found"));
+                                                                       "Compilation with id=" + compId + " was not found"));
 
         CompilationDto dto = compilationMapper.toCompilationDto(compilation);
         dto.setEvents(enrichEventsWithStats(compilation.getEvents()));

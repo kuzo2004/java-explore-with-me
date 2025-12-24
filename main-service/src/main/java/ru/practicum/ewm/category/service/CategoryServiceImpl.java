@@ -1,8 +1,8 @@
 package ru.practicum.ewm.category.service;
 
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.practicum.ewm.category.dto.CategoryDto;
@@ -24,6 +24,7 @@ public class CategoryServiceImpl implements CategoryService {
     private final CategoryRepository repository;
     private final EventRepository eventRepository;
     private final CategoryMapper mapper;
+    private final EntityManager entityManager;
 
 
     // ============================================================
@@ -87,9 +88,9 @@ public class CategoryServiceImpl implements CategoryService {
     // Получение списка категорий с пагинацией
     // ============================================================
     @Override
-    public List<CategoryDto> getCategories(Pageable pageable) {
+    public List<CategoryDto> findCategoriesWithPagination(int from, int size) {
 
-        return repository.findAll(pageable)
+        return repository.findCategoriesWithPagination(from, size, entityManager)
                          .stream()
                          .map(mapper::toCategoryDto)
                          .toList();

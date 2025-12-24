@@ -50,22 +50,18 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
         Event event = eventRepository.findById(eventId)
                                      .orElseThrow(() -> new NotFoundException("Event not found"));
 
-        // 1. Инициатор события не может участвовать
         if (event.getInitiator().getId().equals(userId)) {
             throw new ConflictException("Event initiator cannot request participation");
         }
 
-        // 2. Нельзя участвовать в неопубликованном событии
         if (!EventState.PUBLISHED.equals(event.getState())) {
             throw new ConflictException("Cannot participate in unpublished event");
         }
 
-        // 3. Нельзя создать дубликат заявки
         if (requestRepository.existsByEventIdAndRequesterId(eventId, userId)) {
             throw new ConflictException("Request already exists");
         }
 
-        // 4. Проверка лимита участников
         long confirmedCount = requestRepository.countByEventIdAndStatus(eventId, RequestStatus.CONFIRMED);
         // participantLimit == 0 означает "без ограничений"
         if (event.getParticipantLimit() != null && event.getParticipantLimit() > 0
@@ -73,18 +69,17 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
             throw new ConflictException("Participant limit reached");
         }
 
-        // 5. Создание заявки
         ParticipationRequest request =
                 ParticipationRequest.builder()
                                     .event(event)
                                     .requester(user)
                                     .created(LocalDateTime.now())
                                     .status(
-                                   // Если пре-модерация выключена или лимит = 0 → подтверждаем автоматически
-                                    (!event.getRequestModeration() ||
-                                    event.getParticipantLimit() == 0)
-                                    ? RequestStatus.CONFIRMED
-                                    : RequestStatus.PENDING)
+                                            // Если пре-модерация выключена или лимит = 0 → подтверждаем автоматически
+                                            (!event.getRequestModeration() ||
+                                                    event.getParticipantLimit() == 0)
+                                                    ? RequestStatus.CONFIRMED
+                                                    : RequestStatus.PENDING)
                                     .build();
 
         ParticipationRequest saved = requestRepository.save(request);
@@ -115,8 +110,8 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
     @Transactional
     public ParticipationRequestDto cancelRequest(Long userId, Long requestId) {
         ParticipationRequest request = requestRepository.findByIdAndRequesterId(requestId, userId)
-                        .orElseThrow(() ->
-                            new NotFoundException("Request with id=" + requestId + " not found for user id=" + userId));
+                                                        .orElseThrow(() ->
+                                                                new NotFoundException("Request with id=" + requestId + " not found for user id=" + userId));
 
         if (request.getStatus() == RequestStatus.CANCELED) {
             throw new ConflictException("Request is already canceled");
@@ -173,10 +168,6 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
             throw new BadRequestException("Invalid status: " + updateRequest.getStatus());
         }
 
-        // --------------------------------------------------
-        // 1. Проверка пользователя и события
-        // --------------------------------------------------
-
         userRepository.findById(userId)
                       .orElseThrow(() -> new NotFoundException("User with id=" + userId + " not found"));
 
@@ -189,29 +180,22 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
         }
 
 
-        // ============================================================
-        // 3. Получаем и валидируем заявки
-        // ============================================================
+        // Получаем и валидируем заявки
         List<Long> requestIds = updateRequest.getRequestIds();
 
         List<ParticipationRequest> requests =
                 requestRepository.findAllByIdInAndEventId(requestIds, eventId);
 
-        // заявки не найдены или принадлежат другому событию
         if (requests.size() != requestIds.size()) {
             throw new ConflictException("Some participation requests were not found");
         }
 
-        // --------------------------------------------------
-        // 4. Менять можно только заявки в статусе PENDING
-        // --------------------------------------------------
+        // Менять можно только заявки в статусе PENDING
         if (requests.stream().anyMatch(r -> r.getStatus() != RequestStatus.PENDING)) {
             throw new ConflictException("Only PENDING requests can be updated");
         }
 
-        // ============================================================
-        // 5. Если нужно ОТКЛОНИТЬ заявки — лимит не проверяем
-        // ============================================================
+        // Если нужно ОТКЛОНИТЬ заявки — лимит не проверяем
         if (status == RequestStatus.REJECTED) {
 
             requests.forEach(r -> r.setStatus(RequestStatus.REJECTED));
@@ -227,9 +211,7 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
                                                  .build();
         }
 
-        // --------------------------------------------------
-        // 6. Подсчёт уже подтверждённых заявок
-        // --------------------------------------------------
+        // Подсчёт уже подтверждённых заявок
         long confirmedCount =
                 requestRepository.countByEventIdAndStatus(
                         eventId, RequestStatus.CONFIRMED);
@@ -244,9 +226,7 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
             throw new ConflictException("Participant limit reached");
         }
 
-        // --------------------------------------------------
-        // 7. Если модерация выключена или лимита нет
-        // --------------------------------------------------
+        // Если модерация выключена или лимита нет
         if (limit == 0 || !event.getRequestModeration()) {
 
             List<ParticipationRequest> pendingRequests =
@@ -257,34 +237,28 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
             requestRepository.saveAll(pendingRequests);
 
             return EventRequestStatusUpdateResult.builder()
-                                 .confirmedRequests(
-                                         pendingRequests.stream()
-                                                        // контроль N+1: используется только event.id, requester.id
-                                                        .map(mapper::toDto)
-                                                        .toList()
-                                 )
-                                 .rejectedRequests(List.of())
-                                 .build();
+                                                 .confirmedRequests(
+                                                         pendingRequests.stream()
+                                                                        .map(mapper::toDto)
+                                                                        .toList()
+                                                 )
+                                                 .rejectedRequests(List.of())
+                                                 .build();
         }
 
-        // --------------------------------------------------
-        // 8. Модерация включена и лимит есть
-        // --------------------------------------------------
-
-        // 8.1. Сколько уже подтверждено
+        // Модерация включена и лимит есть
         long available = limit - confirmedCount;
 
-        // дополнительная защита
         if (available <= 0) {
             throw new ConflictException("Participant limit reached");
         }
 
-        // 8.2. Получаем PENDING заявки по дате создания
+        // Получаем PENDING заявки по дате создания
         List<ParticipationRequest> pendingRequests =
                 requestRepository.findAllByIdInAndStatusOrderByCreatedAsc(requestIds,
                         RequestStatus.PENDING);
 
-        // 8.3. Делим заявки в памяти
+        // Делим заявки в памяти
         List<ParticipationRequest> toConfirm =
                 pendingRequests.stream()
                                .limit(available)
@@ -295,16 +269,13 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
                                .skip(available)
                                .toList();
 
-        // 8.4. Обновляем статусы
+        // Обновляем статусы
         toConfirm.forEach(r -> r.setStatus(RequestStatus.CONFIRMED));
         toReject.forEach(r -> r.setStatus(RequestStatus.REJECTED));
 
         requestRepository.saveAll(toConfirm);
         requestRepository.saveAll(toReject);
 
-        // --------------------------------------------------
-        // 9. Формируем результат
-        // --------------------------------------------------
         return EventRequestStatusUpdateResult.builder()
                                              .confirmedRequests(
                                                      toConfirm.stream()
