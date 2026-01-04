@@ -1,9 +1,10 @@
-/*DROP TABLE IF EXISTS participation_requests CASCADE;
-DROP TABLE IF EXISTS compilation_events CASCADE;
-DROP TABLE IF EXISTS compilations CASCADE;
-DROP TABLE IF EXISTS events CASCADE;
-DROP TABLE IF EXISTS categories CASCADE;
-DROP TABLE IF EXISTS users CASCADE;*/
+--DROP TABLE IF EXISTS comments CASCADE;
+--DROP TABLE IF EXISTS participation_requests CASCADE;
+--DROP TABLE IF EXISTS compilation_events CASCADE;
+--DROP TABLE IF EXISTS compilations CASCADE;
+--DROP TABLE IF EXISTS events CASCADE;
+--DROP TABLE IF EXISTS categories CASCADE;
+--DROP TABLE IF EXISTS users CASCADE;
 
 
 CREATE TABLE IF NOT EXISTS users (
@@ -82,3 +83,35 @@ CREATE TABLE IF NOT EXISTS participation_requests (
         REFERENCES users(id)
         ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS comments (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    text VARCHAR(2000) NOT NULL,
+
+    event_id BIGINT NOT NULL,
+    author_id BIGINT NOT NULL,
+
+    created_on TIMESTAMP NOT NULL,
+    updated_on TIMESTAMP,
+
+    comment_state VARCHAR(20) NOT NULL,
+
+    CONSTRAINT fk_comment_event
+        FOREIGN KEY (event_id)
+        REFERENCES events(id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_comment_author
+        FOREIGN KEY (author_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE
+);
+
+-- Индексы для быстрых выборок
+CREATE INDEX idx_comments_event_state_created
+ON comments(event_id, comment_state, created_on);
+
+CREATE INDEX idx_comments_author_state_created
+ON comments(author_id, comment_state, created_on);
+
+CREATE INDEX idx_comments_event_author
+ON comments(event_id, author_id);

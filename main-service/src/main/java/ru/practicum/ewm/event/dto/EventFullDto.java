@@ -48,6 +48,8 @@ public class EventFullDto {
 
     private Long views;
 
+    private Long comments;
+
     private UserShortDto initiator;
 
     private String state; // PENDING / PUBLISHED / CANCELED
