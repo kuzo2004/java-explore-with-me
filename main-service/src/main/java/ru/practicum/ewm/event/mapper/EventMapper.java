@@ -27,10 +27,12 @@ public interface EventMapper {
     // ----------------------------
     @Mapping(target = "views", ignore = true)
     @Mapping(target = "confirmedRequests", ignore = true)
+    @Mapping(target = "comments", ignore = true)
     EventShortDto toEventShortDto(Event event);
 
     @Mapping(target = "views", ignore = true)
     @Mapping(target = "confirmedRequests", ignore = true)
+    @Mapping(target = "comments", ignore = true)
     EventFullDto toEventFullDto(Event event);
 
     // ----------------------------

@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.practicum.ewm.category.model.Category;
 import ru.practicum.ewm.category.repository.CategoryRepository;
 import ru.practicum.ewm.client.StatsClient;
+import ru.practicum.ewm.comment.service.CommentService;
 import ru.practicum.ewm.dto.ViewStats;
 import ru.practicum.ewm.event.dto.EventFullDto;
 import ru.practicum.ewm.event.dto.EventShortDto;
@@ -64,6 +65,7 @@ public class EventServiceImpl implements EventService {
     private final StatsClient statsClient;
     private final EntityManager entityManager;
     private final ParticipationRequestService requestService;
+    private final CommentService commentService;
 
 
     // ============================================================
@@ -109,6 +111,7 @@ public class EventServiceImpl implements EventService {
         EventFullDto eventFullDto = eventMapper.toEventFullDto(saved);
         eventFullDto.setViews(0L);
         eventFullDto.setConfirmedRequests(0L);
+        eventFullDto.setComments(0L);
 
         return eventFullDto;
     }
@@ -183,9 +186,12 @@ public class EventServiceImpl implements EventService {
 
         Map<Long, Long> viewsMap = getViews(List.of(saved), start, end);
         long confirmedRequests = requestService.getConfirmedRequestsCount(saved.getId());
+        long comments = commentService.countPublishedByEventId(saved.getId());
+
         EventFullDto result = eventMapper.toEventFullDto(saved);
         result.setViews(viewsMap.getOrDefault(saved.getId(), 0L));
         result.setConfirmedRequests(confirmedRequests);
+        result.setComments(comments);
 
         return result;
     }
@@ -207,10 +213,12 @@ public class EventServiceImpl implements EventService {
 
         Map<Long, Long> viewsMap = getViews(List.of(event), start, end);
         long confirmedRequests = requestService.getConfirmedRequestsCount(event.getId());
+        long comments = commentService.countPublishedByEventId(event.getId());
 
         EventFullDto dto = eventMapper.toEventFullDto(event);
         dto.setViews(viewsMap.getOrDefault(event.getId(), 0L));
         dto.setConfirmedRequests(confirmedRequests);
+        dto.setComments(comments);
 
         return dto;
     }
@@ -233,12 +241,14 @@ public class EventServiceImpl implements EventService {
 
         Map<Long, Long> viewsMap = getViews(events, start, end);
         Map<Long, Long> confirmedMap = getConfirmedRequests(events);
+        Map<Long, Long> commentsMap = getCommentsCount(events);
 
         return events.stream()
                      .map(event -> {
                          EventShortDto dto = eventMapper.toEventShortDto(event);
                          dto.setViews(viewsMap.getOrDefault(event.getId(), 0L));
                          dto.setConfirmedRequests(confirmedMap.getOrDefault(event.getId(), 0L));
+                         dto.setComments(commentsMap.getOrDefault(event.getId(), 0L));
                          return dto;
                      })
                      .toList();
@@ -266,15 +276,17 @@ public class EventServiceImpl implements EventService {
                 ? params.getRangeEnd()
                 : LocalDateTime.now();
 
-        // Просмотры и подтверждённые заявки
+        // Просмотры, подтверждённые заявки, публичные комментарии
         Map<Long, Long> viewsMap = getViews(events, start, end);
         Map<Long, Long> confirmedMap = getConfirmedRequests(events);
+        Map<Long, Long> commentsMap = getCommentsCount(events);
 
         return events.stream()
                      .map(e -> {
                          EventFullDto dto = eventMapper.toEventFullDto(e);
                          dto.setViews(viewsMap.getOrDefault(e.getId(), 0L));
                          dto.setConfirmedRequests(confirmedMap.getOrDefault(e.getId(), 0L));
+                         dto.setComments(commentsMap.getOrDefault(e.getId(), 0L));
                          return dto;
                      })
                      .toList();
@@ -309,9 +321,10 @@ public class EventServiceImpl implements EventService {
                 : LocalDateTime.now();
 
 
-        // Batch-агрегация просмотров и заявок
+        // Batch-агрегация просмотров, заявок, публичных комментариев
         Map<Long, Long> viewsMap = getViews(events, start, end);
         Map<Long, Long> confirmedMap = getConfirmedRequests(events);
+        Map<Long, Long> commentsMap = getCommentsCount(events);
 
         // 4. onlyAvailable — В ПАМЯТИ (события с доступным лимитом)
         if (Boolean.TRUE.equals(params.getOnlyAvailable())) {
@@ -357,6 +370,7 @@ public class EventServiceImpl implements EventService {
                        EventShortDto dto = eventMapper.toEventShortDto(e);
                        dto.setViews(viewsMap.getOrDefault(e.getId(), 0L));
                        dto.setConfirmedRequests(confirmedMap.getOrDefault(e.getId(), 0L));
+                       dto.setComments(commentsMap.getOrDefault(e.getId(), 0L));
                        return dto;
                    })
                    .toList();
@@ -374,15 +388,15 @@ public class EventServiceImpl implements EventService {
         LocalDateTime start = DEFAULT_START;           //  с начала эпохи
         LocalDateTime end = LocalDateTime.now();       // до текущего времени
 
-        // просмотры
+        // просмотры, заявки(подтвержденные), публичные комментарии
         Map<Long, Long> viewsMap = getViews(List.of(event), start, end);
-
-        // заявки(подтвержденные)
         long confirmedRequests = requestService.getConfirmedRequestsCount(event.getId());
+        long comments = commentService.countPublishedByEventId(event.getId());
 
         EventFullDto dto = eventMapper.toEventFullDto(event);
         dto.setViews(viewsMap.getOrDefault(event.getId(), 0L));
         dto.setConfirmedRequests(confirmedRequests);
+        dto.setComments(comments);
 
         return dto;
     }
@@ -466,10 +480,12 @@ public class EventServiceImpl implements EventService {
 
         Map<Long, Long> viewsMap = getViews(List.of(saved), start, end);
         long confirmedRequests = requestService.getConfirmedRequestsCount(saved.getId());
+        long comments = commentService.countPublishedByEventId(saved.getId());
 
         EventFullDto eventFullDto = eventMapper.toEventFullDto(saved);
         eventFullDto.setViews(viewsMap.getOrDefault(saved.getId(), 0L));
         eventFullDto.setConfirmedRequests(confirmedRequests);
+        eventFullDto.setComments(comments);
 
         return eventFullDto;
     }
@@ -514,6 +530,22 @@ public class EventServiceImpl implements EventService {
                                     .toList();
 
         return requestService.getConfirmedRequestsCountMap(eventIds);
+    }
+
+    // --------------------------------------------------------------
+    // comments — агрегируются и не хранятся в Event
+    // --------------------------------------------------------------
+    private Map<Long, Long> getCommentsCount(List<Event> events) {
+
+        if (events.isEmpty()) {
+            return Map.of();
+        }
+
+        List<Long> ids = events.stream()
+                               .map(Event::getId)
+                               .toList();
+
+        return commentService.countPublishedByEventIds(ids);
     }
 }
 
